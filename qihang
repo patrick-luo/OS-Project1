@@ -1,0 +1,12 @@
+Today's task:
+
+0. packet segmentation
+
+1. add the required functions to the Procedures.java
+
+2. seperate client-client stub & server-server stub
+
+3. cache & replication & heart beats
+
+
+
