@@ -3,14 +3,14 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Vector;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import com.sun.corba.se.impl.ior.ByteBuffer;
 
 public class WorkerPool {
 
@@ -47,9 +47,10 @@ public class WorkerPool {
 	private int versionNum;
 	private int registeredPort;// registered port for the entire server, not for
 								// a single worker
-	Integer cnt = 0;
+	private InetAddress mapperIP;
+	private int mapperPort;
 
-	public WorkerPool(String programNum, String versionNum, int port) {
+	public WorkerPool(String programNum, String versionNum, int port, InetAddress mapperIP, int mapperPort) throws UnknownHostException {
 		fixedPool = Executors.newFixedThreadPool(POOL_SIZE);
 		activeThreadNum = 0;
 		this.programNum = Integer.parseInt(programNum);
@@ -58,6 +59,8 @@ public class WorkerPool {
 		this.duplicateCache = new Cache<Integer, ReplyPacket>();
 		this.requestPacketsBuffer = new HashMap<Integer, ArrayList<DataPacket>>();
 		this.packetsNumMap = new HashMap<Integer, Vector<Integer>>();
+		this.mapperIP = mapperIP;
+		this.mapperPort = mapperPort;
 	}
 
 	public void goWorker(DatagramPacket receivedPacket) throws SocketException {
@@ -113,15 +116,16 @@ public class WorkerPool {
 			} else // this message should come from the client to invoke
 					// function
 			{
-				// activeThreadNum++;
-				// System.out
-				// .println("+[3]=======================================+");
-				// System.out
-				// .println("+----worker recieved client's packet--------+");
-				// synchronized (cnt) {
-				// System.err.print(++cnt + ", ");
-				// }
-				// return;
+				if(request.startsWith("Procedure0")){
+					try {
+						procedureZero();
+					} catch (IOException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					return;
+				}
+				
 				ReplyPacket replyPacket = null;
 				byte[] data = receivedPacket.getData();
 				int xid = data[3] & 0xFF | (data[2] & 0xFF) << 8
@@ -137,36 +141,46 @@ public class WorkerPool {
 																// is being
 																// processed
 						return;
-					else
+					else{
+						synchronized (activeThreadNum) {
+							activeThreadNum++;
+						}
 						replyPacket = duplicateCache.get(xid);
+						ReplyPacket running = new ReplyPacket();
+						duplicateCache.put(xid, running);
+					//	System.out.println(1);
+					}
 				} else {
 					putDataPacketInHashTable(dataPacket);
 				//	System.err
 				//			.println(requestPacketsBuffer.get(xid).toString());
 					if (requestPacketReady(xid)) { // all received
+						System.out.println("Done receiving all the request packets.");
 						synchronized (activeThreadNum) {
 							activeThreadNum++;
 						}
-						requestPacket = recoverRequestPacket(xid);
 						ReplyPacket running = new ReplyPacket();
 						duplicateCache.put(xid, running); // "running": being
 															// processed
+					//	System.out.println(2);
+						requestPacket = recoverRequestPacket(xid);
+						
 						try {
+							System.out.println("Start calculating...");
 							replyPacket = this.createReplyPacket();
+							System.out.println("Done.");
 						} catch (InterruptedException e) {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
 						}
-						duplicateCache.put(xid, replyPacket);
+					//	duplicateCache.put(xid, replyPacket);
 					} else
 						return;
 				}
 
+				System.out.println("+[5]=======================================+");
+				System.out.println("+----worker sends result back----------------+");
 				try {
-					System.out
-							.println("+[5]=======================================+");
-					System.out
-							.println("+----worker sends result back----------------+");
 					this.send(replyPacket);
 				} catch (IOException e) {
 					e.printStackTrace();
@@ -174,20 +188,43 @@ public class WorkerPool {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
+				if(duplicateCache.isHit(xid))
+					duplicateCache.put(xid, replyPacket);
+			//	System.out.println(3);
 				synchronized (activeThreadNum) {
 					activeThreadNum--;
 				}
+				
+				System.out.println("+[6]=======================================+");
+				System.out.println("+--worker updates server workload to mapper--+");
 				try {
-					System.out
-							.println("+[6]=======================================+");
-					System.out
-							.println("+--worker updates server workload to mapper--+");
 					this.updateToMapper();
 				} catch (IOException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			}
+		}
+
+		private void procedureZero() throws IOException {
+			// TODO Auto-generated method stub
+			String reply;
+			int progNum = Integer.parseInt(request.split(":")[1].split("_")[0]);
+			int verNum = Integer.parseInt(request.split(":")[1].split("_")[1]);
+			
+			if(progNum == programNum && verNum == versionNum)
+				reply = "Verification success!";
+			else
+				reply = "Program number or version number does not match.";
+			
+			byte[] sendData = new byte[1024];
+			int port = receivedPacket.getPort();
+			sendData = reply.getBytes();
+			DatagramPacket sendPacket = new DatagramPacket(sendData,
+					sendData.length, receivedPacket.getAddress(), port);
+			DatagramSocket socket = new DatagramSocket();
+			socket.send(sendPacket);
+			socket.close();
 		}
 
 		private RequestPacket recoverRequestPacket(int xid) {
@@ -379,20 +416,56 @@ public class WorkerPool {
 		 * @throws IOException
 		 */
 		private void updateToMapper() throws IOException {
+			// format: "ServerUpdate:<program>_<version>:<IPaddress>:<local port>:<registered_port>:<num_threads>"
 			byte[] sendData = new byte[1024];
-			String updateInfo = "ServerUpdate:" + programNum + "_" + versionNum
-					+ ":" + registeredPort + ":";
-			synchronized (activeThreadNum) {
-				updateInfo += activeThreadNum.toString();
-			}
-			sendData = updateInfo.getBytes();
-			DatagramPacket sendPacket = new DatagramPacket(sendData,
-					sendData.length,
-					InetAddress.getByName(Announcement.MAPPER_IP),
-					Announcement.MAPPER_PORT);
+			byte[] receiveData = new byte[1024];
 			DatagramSocket socket = new DatagramSocket();
-			socket.send(sendPacket);
-			socket.close();
+            InetAddress localIP = InetAddress.getByName("localhost");
+            int index = localIP.toString().indexOf('/');
+            String updateInfo = "ServerUpdate:" + programNum + "_" + versionNum
+                            + ":" + localIP.toString().substring(index+1)+ ":" + socket.getLocalPort() + ":" + registeredPort + ":";
+            synchronized (activeThreadNum) {
+                    updateInfo += activeThreadNum.toString();
+            }
+            sendData = updateInfo.getBytes();
+            
+            String feedback = "";
+            socket.setSoTimeout(2000);
+            
+    		for(int i = 1; feedback.length() == 0; i ++)
+    		{
+    
+    			DatagramPacket sendPacket = new DatagramPacket(sendData,
+                        sendData.length, mapperIP, mapperPort);
+    			socket.send(sendPacket);
+
+    			// wait for the response from the mapper
+    			DatagramPacket receivePacket = new DatagramPacket(receiveData,
+    					receiveData.length);
+    			try{
+    				socket.receive(receivePacket);
+    			}
+    			catch(SocketTimeoutException e)
+    			{
+    				System.out.println("Mapper seems down...");
+    			}
+    			
+    			feedback = new String(receivePacket.getData()).trim();
+    			
+    			if(i == 3)
+    			{
+    				System.out.println("Switch to backup mapper...");
+    				mapperIP = InetAddress.getByName(ShadowMapperAnnouncement.SHADOW_MAPPER_IP);
+    				mapperPort = ShadowMapperAnnouncement.SHADOW_MAPPER_PORT;
+    			}
+    			if(i >= 6)
+    			{
+    				System.out.println("Both Mapers seem down...");
+    				System.exit(-1);
+    			}
+    		}
+            System.out.println(feedback);
+            socket.close();
 		}
 
 		/**

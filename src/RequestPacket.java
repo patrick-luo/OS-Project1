@@ -9,7 +9,7 @@ import javax.swing.text.html.StyleSheet.ListPainter;
 
 public class RequestPacket {
 	// globals
-	private static final int NUM_INTEGERS = 256; // defines the safe size of udp
+	public static final int NUM_INTEGERS = 2560; // defines the safe size of udp
 													// byte[], in int size, 4
 													// Bytes
 

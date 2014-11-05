@@ -2,7 +2,6 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 
 public class ReplyPacket {
-	private static final int NUM_INTEGERS = 256;
 	int xid;
 	int programNum;
 	int versionNum;
@@ -25,7 +24,7 @@ public class ReplyPacket {
 		this.result = result;
 
 		listOfPackets = new ArrayList<byte[]>();
-		buffer = ByteBuffer.allocate(4 * NUM_INTEGERS);
+		buffer = ByteBuffer.allocate(4 * RequestPacket.NUM_INTEGERS);
 		currentSID = 1;
 	}
 
@@ -36,7 +35,7 @@ public class ReplyPacket {
 	}
 
 	public ArrayList<byte[]> getBytes() {
-		buffer = ByteBuffer.allocate(4 * NUM_INTEGERS);
+		buffer = ByteBuffer.allocate(4 * RequestPacket.NUM_INTEGERS);
 		buffer.putInt(xid);
 		buffer.putInt(currentSID);
 
@@ -82,7 +81,7 @@ public class ReplyPacket {
 		 * This part deals with adding the header to the list of packets. It has
 		 * the SID to be 0.
 		 */
-		buffer = ByteBuffer.allocate(NUM_INTEGERS * 4);
+		buffer = ByteBuffer.allocate(RequestPacket.NUM_INTEGERS * 4);
 		buffer.putInt(xid);
 		buffer.putInt(0); // SID
 		buffer.putInt(listOfPackets.size() + 1); // num of packets, plus itself
@@ -99,7 +98,7 @@ public class ReplyPacket {
 		if (buffer.position() == buffer.capacity()) {
 			listOfPackets.add(buffer.array());
 			buffer.clear();
-			buffer = ByteBuffer.allocate(NUM_INTEGERS * 4);
+			buffer = ByteBuffer.allocate(RequestPacket.NUM_INTEGERS * 4);
 			buffer.putInt(xid);
 			buffer.putInt(++currentSID);
 		}
@@ -140,9 +139,9 @@ public class ReplyPacket {
 	// }
 
 	static public ReplyPacket getPacketFromBytes(ArrayList<DataPacket> list) {
-		System.out.println("+[4]=======================================+");
-		System.out.println("+----Server demarshalls client's request---+");
-		ByteBuffer bytebuffer = ByteBuffer.allocate(NUM_INTEGERS * list.size()
+//		System.out.println("+[4]=======================================+");
+//		System.out.println("+----Server demarshalls client's request---+");
+		ByteBuffer bytebuffer = ByteBuffer.allocate(RequestPacket.NUM_INTEGERS * list.size()
 				* 4);
 
 		/**

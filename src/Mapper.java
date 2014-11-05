@@ -16,12 +16,17 @@ public class Mapper {
 	private DatagramSocket socket;
 	private DudePool dudePool;
 	private Monitor monitor;
+	private boolean isMaster;
 
-	public Mapper() throws SocketException {
-		socket = new DatagramSocket(1111);// mapper's socket
+	public Mapper(boolean isMaster) throws SocketException {
+		if (isMaster)
+			socket = new DatagramSocket(1111);// master mapper's socket
+		else
+			socket = new DatagramSocket(1112); // shadow mapper's socket
 		portMap = new HashMap<String, ServicePool>();
-		dudePool = new DudePool(portMap);
+		dudePool = new DudePool(portMap, isMaster);
 		monitor = new Monitor();
+		this.isMaster = isMaster;
 	}
 
 	/**
@@ -110,8 +115,8 @@ public class Mapper {
 							break;
 						}
 					}
-					System.out
-							.println("Monitor: Sender asks receiver to stop.");
+					// System.out
+					// .println("Monitor: Sender asks receiver to stop.");
 					senderHasReachedStartTime = false;
 				}
 			}
@@ -275,17 +280,26 @@ public class Mapper {
 		}
 	}
 
-	public void Announce() throws IOException {
-		BufferedWriter writer = new BufferedWriter(new FileWriter(
-				"../src/Announcement.java"));
-		writer.write("/**\r\n");
-		writer.write(" * This class stores public IP address and port number of the MAPPER.\r\n");
-		writer.write(" */\r\n");
-		writer.write("public class Announcement {\r\n");
-		writer.write("\tpublic static final String MAPPER_IP = \"localhost\";\r\n");
-		writer.write("\tpublic static final int MAPPER_PORT = 1111;\r\n");
-		writer.write("}\r\n");
-		writer.close();
+	public void Announce(boolean isMaster) throws IOException {
+
+		if (isMaster == true) {
+			BufferedWriter writer = new BufferedWriter(new FileWriter(
+					"../src/MasterMapperAnnouncement.java"));
+			writer.write("public class MasterMapperAnnouncement {\r\n");
+			writer.write("\tpublic static final String MASTER_MAPPER_IP = \"localhost\";\r\n");
+			writer.write("\tpublic static final int MASTER_MAPPER_PORT = 1111;\r\n");
+			writer.write("}\r\n");
+			writer.close();
+		} else {
+			BufferedWriter writer = new BufferedWriter(new FileWriter(
+					"../src/ShadowMapperAnnouncement.java"));
+			writer.write("public class ShadowMapperAnnouncement {\r\n");
+			writer.write("\tpublic static final String SHADOW_MAPPER_IP = \"localhost\";\r\n");
+			writer.write("\tpublic static final int SHADOW_MAPPER_PORT = 1112;\r\n");
+			writer.append("}\r\n");
+			writer.close();
+
+		}
 	}
 
 	/**
@@ -303,16 +317,34 @@ public class Mapper {
 		receivePacket = new DatagramPacket(receiveData, receiveData.length);
 		socket.receive(receivePacket);
 		requestInfo.content = new String(receivePacket.getData()).trim();
-		requestInfo.ip = receivePacket.getAddress();
-		requestInfo.port = receivePacket.getPort();
+		String[] temp = requestInfo.content.split(":");
+		requestInfo.ip = InetAddress.getByName(temp[2]);
+		requestInfo.port = Integer.parseInt(temp[3]);
 		return requestInfo;
 	}
 
 	public static void main(String[] args) throws IOException {
 		// TODO Auto-generated method stub
-		Mapper mapper = new Mapper();
+		if (args.length != 1) {
+			System.out
+					.println("-m means master mapper, - s means shadow mapper.");
+			System.out.println("Usage:java Mapper [-m]/[-s]");
+			System.exit(-1);
+		}
+
+		boolean isMaster = true;
+		if (args[0].equals("-m")) {
+			isMaster = true;
+		} else if (args[0].equals("-s")) {
+			isMaster = false;
+		} else {
+			System.out.println("Invalid parament!");
+			System.exit(-1);
+		}
+		Mapper mapper = new Mapper(isMaster);
+
 		mapper.monitor.launch();
-		// mapper.Announce();
+	//	mapper.Announce(isMaster);
 		while (true) {
 			// receive a request generally.
 			RequestInfo requestInfo = mapper.receive();

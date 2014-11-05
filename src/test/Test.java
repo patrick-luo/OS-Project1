@@ -33,41 +33,47 @@ public class Test {
 //		}
 //	}
 	
-	public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
-		// TODO Auto-generated method stub
-		ExecutorService executor = Executors.newSingleThreadExecutor();
-		
-		int timeout = 1;
-		while (true) {
-			Future<String> future = executor.submit(new Task());
-			try {
-				System.out.println("Started..");
-				Object result = future.get(timeout, TimeUnit.SECONDS);
-				System.out.println("finished..." + result);
-				executor.shutdownNow();
-				return;
-			} catch (TimeoutException e) {
-				timeout = 10;
-				System.out.println(future.cancel(true));
-			//	future = executor.submit(new Task2());
-				System.out.println("Timeout reached!!! retransmit!");
-			}
-		}
-	}
+//	public static void main(String[] args) throws IOException {
+//		byte[] receiveData = new byte[1024];
+//		String s = new String(receiveData).trim();
+//		System.out.println(s.length() == 0);
+//	}
 	
-	static class Task implements Callable<String>{
-		public String call() throws Exception{
-			System.out.println("yu qiao");
-			Thread.sleep(2000);
-			return "helllo";
-		}
-	}
+//	public static void main(String[] args) throws IOException, InterruptedException, ExecutionException {
+//		// TODO Auto-generated method stub
+//		ExecutorService executor = Executors.newSingleThreadExecutor();
+//		
+//		int timeout = 1;
+//		while (true) {
+//			Future<String> future = executor.submit(new Task());
+//			try {
+//				System.out.println("Started..");
+//				Object result = future.get(timeout, TimeUnit.SECONDS);
+//				System.out.println("finished..." + result);
+//				executor.shutdownNow();
+//				return;
+//			} catch (TimeoutException e) {
+//				timeout = 10;
+//				System.out.println(future.cancel(true));
+//			//	future = executor.submit(new Task2());
+//				System.out.println("Timeout reached!!! retransmit!");
+//			}
+//		}
+//	}
 	
-	static class Task2 implements Callable<String>{
-		public String call() throws Exception{
-			Thread.sleep(2000);
-			return "yuqiao";
-		}
-	}
+//	static class Task implements Callable<String>{
+//		public String call() throws Exception{
+//			System.out.println("yu qiao");
+//			Thread.sleep(2000);
+//			return "helllo";
+//		}
+//	}
+//	
+//	static class Task2 implements Callable<String>{
+//		public String call() throws Exception{
+//			Thread.sleep(2000);
+//			return "yuqiao";
+//		}
+//	}
 
 }

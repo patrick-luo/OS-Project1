@@ -1,6 +1,7 @@
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -11,10 +12,12 @@ public class DudePool {
 	private static final int POOL_SIZE = 10;
 	private HashMap<String, ServicePool> portMap = null;
 	private ExecutorService fixedPool = null;
+	private boolean isMaster;
 
-	public DudePool(HashMap<String, ServicePool> portMap) {
+	public DudePool(HashMap<String, ServicePool> portMap, boolean isMaster) {
 		fixedPool = Executors.newFixedThreadPool(POOL_SIZE);
 		this.portMap = portMap;
+		this.isMaster = isMaster;
 	}
 
 	public void goDude(RequestInfo requestInfo) {
@@ -23,17 +26,16 @@ public class DudePool {
 
 	public void printHashMap() {
 		synchronized (portMap) {
-			if(portMap.size() == 0)
-			{
+			if (portMap.size() == 0) {
 				System.out.println("The port map contains nothing.");
 				return;
 			}
 			System.out.println("The port map is as follows:");
 			for (String key : this.portMap.keySet()) {
 				ServicePool servicePool = portMap.get(key);
-				//System.out.println("key = " + key + " value: ");
+				// System.out.println("key = " + key + " value: ");
 				System.out.print("[#" + key + "]->");
-				
+
 				servicePool.printServicePool();
 			}
 		}
@@ -47,21 +49,81 @@ public class DudePool {
 		}
 
 		public void run() {
+			boolean isForwarded = false;
 			String reply = "";
-			if (requestInfo.content.startsWith("Hello")){
+			if (requestInfo.content.startsWith("Hello")) {
+
+				if (requestInfo.content.contains("forward"))
+				{
+					isForwarded = true;
+				}
 				reply = this.answerClient(requestInfo);
-			}
-			else if (requestInfo.content.startsWith("Server"))
-			{
-				if(requestInfo.content.startsWith("ServerUpdate"))
-					reply = this.updateServerInfo(requestInfo);
+
+				if (isMaster) {
+					System.out.println("Synchronize to shadow Mapper.");
+					DatagramPacket synchronizePacket;
+					requestInfo.content += ":" + "forward";
+					byte[] sendData = requestInfo.content.getBytes();
+
+					InetAddress shadowMapperIp;
+					try {
+						shadowMapperIp = InetAddress
+								.getByName(ShadowMapperAnnouncement.SHADOW_MAPPER_IP);
+						synchronizePacket = new DatagramPacket(sendData,
+								sendData.length, shadowMapperIp,
+								ShadowMapperAnnouncement.SHADOW_MAPPER_PORT);
+						DatagramSocket socket;
+						socket = new DatagramSocket();
+						socket.send(synchronizePacket);
+						socket.close();
+					} catch (Exception e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+
+				}
+			} else if (requestInfo.content.startsWith("Server")) {
+				if (requestInfo.content.startsWith("ServerUpdate"))
+				{
+					if(requestInfo.content.contains("forward"))
+						isForwarded = true;
+					reply = updateServerInfo(requestInfo);
+				}
 				else
+				{
+					if(requestInfo.content.contains("forward"))
+						isForwarded = true;
 					reply = this.registerServer(requestInfo);
-			}
-			else
+				}
+				if (isMaster) {
+					System.out.println("Synchronize to shadow Mapper.");
+					DatagramPacket synchronizePacket;
+					requestInfo.content += ":" + "forward";
+					byte[] sendData = requestInfo.content.getBytes();
+
+					InetAddress shadowMapperIp;
+					try {
+						shadowMapperIp = InetAddress
+								.getByName(ShadowMapperAnnouncement.SHADOW_MAPPER_IP);
+						synchronizePacket = new DatagramPacket(sendData,
+								sendData.length, shadowMapperIp,
+								ShadowMapperAnnouncement.SHADOW_MAPPER_PORT);
+						DatagramSocket socket;
+						socket = new DatagramSocket();
+						socket.send(synchronizePacket);
+						socket.close();
+					} catch (Exception e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+
+				}
+					
+			} else
 				reply = "Please specify if you request as a client or register as a server.";
 			try {
-				this.send(requestInfo, reply);
+				if(isMaster ||!isForwarded)
+					this.send(requestInfo, reply);
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -89,9 +151,13 @@ public class DudePool {
 			String reply = "";
 			try {
 				String key = requestInfo.content.split(":")[1];
-				System.out.println("+[1]=======================================+");
-				System.out.println("+=====Mapper receives request from client==+");
-				System.out.println("asking for service: <Program#>_<Version#> = " + key);
+				System.out
+						.println("+[1]=======================================+");
+				System.out
+						.println("+=====Mapper receives request from client==+");
+				System.out
+						.println("asking for service: <Program#>_<Version#> = "
+								+ key);
 				synchronized (portMap) {
 					if (portMap.containsKey(key)) {
 						try {
@@ -117,15 +183,19 @@ public class DudePool {
 
 		/**
 		 * receive register info from a server. Valid info should have this
-		 * format: "Server:<Program#>_<Version#>"
+		 * format: "Server:<Program#>_<Version#>:<IPaddress>:<port>"
 		 */
 		public String registerServer(RequestInfo requestInfo) {
 			String reply;
 			try {
 				String key = requestInfo.content.split(":")[1];
-				System.out.println("+[1]=======================================+");
-				System.out.println("+=====Mapper registers for server==========+");
-				System.out.println("resigtering for service: <Program#>_<Version#> = " + key);
+				System.out
+						.println("+[1]=======================================+");
+				System.out
+						.println("+=====Mapper registers for server==========+");
+				System.out
+						.println("resigtering for service: <Program#>_<Version#> = "
+								+ key);
 				synchronized (portMap) {
 					if (portMap.containsKey(key)) {
 						// TODO add new port to the list
@@ -146,23 +216,35 @@ public class DudePool {
 			printHashMap();
 			return reply;
 		}
-		
-		public String updateServerInfo(RequestInfo requestInfo)
-		{// Format: "ServerUpdate:<program>_<version>:<registered_port>:<num_threads>"
-			String reply;
+
+		public String updateServerInfo(RequestInfo requestInfo) {// Format:
+		// "ServerUpdate:<program>_<version>:<IPaddress>:<communication port>:<registered_port>:<num_threads>"
+			String reply = "";
 			try {
 				String[] temp = requestInfo.content.split(":");
 				String key = temp[1];
-				requestInfo.port = Integer.parseInt(temp[2]); // change the port to the registered port
-				int threadNum = Integer.parseInt(requestInfo.content.split(":")[3]);
-				System.out.println("+[1]=======================================+");
-				System.out.println("+=Mapper recieves update server workload===+");
-				System.out.println("<program>_<version>:<registered_port>:<num_threads> " + key + " " + requestInfo.port +" " + threadNum);
+				
+				int threadNum = Integer
+						.parseInt(requestInfo.content.split(":")[4]);
+				System.out
+						.println("+[1]=======================================+");
+				System.out
+						.println("+=Mapper recieves update server workload===+");
+				System.out
+						.println("<program>_<version>:<registered_port>:<num_threads> "
+								+ key
+								+ " "
+								+ requestInfo.port
+								+ " "
+								+ threadNum);
 				synchronized (portMap) {
 					if (portMap.containsKey(key)) {
 						// TODO add new port to the list
 						ServicePool servicePool = portMap.get(key);
-						if(servicePool.updateService(requestInfo.toString(), threadNum))
+						String ip_port = requestInfo.ip.toString() + "_";
+						ip_port += temp[4];
+						if (servicePool.updateService(ip_port,
+								threadNum))
 							reply = "MapperReply: Update Success!";
 						else
 							reply = "MapperReply: You service is obselete. Please re-register your service";
@@ -173,7 +255,6 @@ public class DudePool {
 			} catch (Exception e) {
 				reply = "MapperReply: Please offer a valid update format: \"ServerUpdate:<Program#>_<Version#>:<ThreadNum>\"";
 			}
-			// DEBUG
 			printHashMap();
 			return reply;
 		}
